@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161b">
+<title>Musicarr</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
+  <a href="#/artists" class="brand"><img src="/static/logo.svg" alt=""><span>Musicarr</span></a>
+  <div class="global-search">
+    <input id="globalSearch" type="search" placeholder="Search library…" autocomplete="off">
+    <div id="globalResults" class="dropdown hidden"></div>
+  </div>
+  <div class="top-actions">
+    <span id="activityBadge" class="badge hidden" title="Downloads in queue"></span>
+  </div>
+</header>
+<nav class="sidebar" id="sidebar">
+  <a href="#/artists" data-nav="artists"><i>♪</i>Artists</a>
+  <div class="sub" data-sub="artists">
+    <a href="#/add">Add New</a>
+    <a href="#/import">Library Import</a>
+    <a href="#/editor">Mass Editor</a>
+  </div>
+  <a href="#/calendar" data-nav="calendar"><i>▦</i>Calendar</a>
+  <a href="#/activity/queue" data-nav="activity"><i>⇣</i>Activity <span class="nav-count" id="queueCount"></span></a>
+  <div class="sub" data-sub="activity">
+    <a href="#/activity/queue">Queue</a>
+    <a href="#/activity/history">History</a>
+    <a href="#/activity/blocklist">Blocklist</a>
+  </div>
+  <a href="#/wanted/missing" data-nav="wanted"><i>✱</i>Wanted</a>
+  <div class="sub" data-sub="wanted">
+    <a href="#/wanted/missing">Missing</a>
+    <a href="#/wanted/cutoff">Cutoff Unmet</a>
+  </div>
+  <a href="#/settings/media" data-nav="settings"><i>⚙</i>Settings</a>
+  <div class="sub" data-sub="settings">
+    <a href="#/settings/media">Media Management</a>
+    <a href="#/settings/profiles">Profiles</a>
+    <a href="#/settings/indexers">Indexers</a>
+    <a href="#/settings/clients">Download Clients</a>
+    <a href="#/settings/lists">Import Lists</a>
+    <a href="#/settings/connect">Connect</a>
+    <a href="#/settings/general">General</a>
+  </div>
+  <a href="#/system/status" data-nav="system"><i>◎</i>System <span class="nav-count warn" id="healthCount"></span></a>
+  <div class="sub" data-sub="system">
+    <a href="#/system/status">Status</a>
+    <a href="#/system/tasks">Tasks</a>
+    <a href="#/system/logs">Logs</a>
+  </div>
+</nav>
+<main id="view" class="view"></main>
+<div id="modalRoot"></div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

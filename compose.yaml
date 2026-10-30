@@ -1,0 +1,45 @@
+# Musicarr + slskd (Soulseek). Drop this folder in Documents\Docker\compose\musicarr
+# and add "- musicarr/compose.yaml" to the include: list in your main compose.yaml.
+#
+# Edit the three host paths marked  <-- below. On Windows, use forward slashes, e.g. D:/Media/Music
+services:
+  musicarr:
+    image: ghcr.io/feynos-lin/musicarr:latest
+    # build: .            # or build locally from this folder instead of pulling
+    container_name: musicarr
+    restart: unless-stopped
+    environment:
+      - TZ=America/Denver
+      - PUID=1000
+      - PGID=1000
+    ports:
+      - "8689:8689"
+    volumes:
+      - ./config:/config
+      - D:/Media/Music:/music            # <-- your music library (the same folder Navidrome reads)
+      - D:/Downloads:/downloads          # <-- shared downloads folder (qBittorrent / SABnzbd / slskd)
+    depends_on:
+      - slskd
+
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    restart: unless-stopped
+    environment:
+      - TZ=America/Denver
+      - SLSKD_REMOTE_CONFIGURATION=true
+      - SLSKD_SLSK_USERNAME=change-me            # <-- pick a Soulseek username (account is created on first login)
+      - SLSKD_SLSK_PASSWORD=change-me
+      - SLSKD_USERNAME=admin                     # slskd web UI login
+      - SLSKD_PASSWORD=change-me
+      - SLSKD_API_KEY=change-this-to-a-long-random-string   # paste this into Musicarr → Download Clients → slskd
+      - SLSKD_DOWNLOADS_DIR=/downloads/soulseek
+      - SLSKD_INCOMPLETE_DIR=/downloads/soulseek-incomplete
+      - SLSKD_SHARED_DIR=/music
+    ports:
+      - "5030:5030"          # slskd web UI
+      - "50300:50300"        # Soulseek listen port — forward on your router for faster transfers
+    volumes:
+      - ./slskd:/app
+      - D:/Downloads:/downloads
+      - D:/Media/Music:/music:ro
