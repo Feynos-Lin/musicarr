@@ -857,11 +857,11 @@ route(/^\/settings\/indexers$/, async view => {
 });
 
 const CLIENT_FIELDS = {
-  qbittorrent: [["url", "URL", "http://qbittorrent:8080"], ["username", "Username"], ["password", "Password", "", "password"], ["category", "Category", "music"]],
-  transmission: [["url", "URL", "http://transmission:9091"], ["username", "Username"], ["password", "Password", "", "password"], ["category", "Label", "music"], ["download_path", "Download Directory (optional)"]],
-  deluge: [["url", "URL", "http://deluge:8112"], ["password", "Web UI Password", "", "password"], ["category", "Label", "music"], ["download_path", "Download Directory (optional)"]],
-  sabnzbd: [["url", "URL", "http://sabnzbd:8080"], ["api_key", "API Key", "", "password"], ["category", "Category", "music"]],
-  nzbget: [["url", "URL", "http://nzbget:6789"], ["username", "Username"], ["password", "Password", "", "password"], ["category", "Category", "music"]],
+  qbittorrent: [["url", "URL", "http://qbittorrent:8080"], ["username", "Username"], ["password", "Password", "", "password"], ["category", "Category", "music"], ["download_path", "Download Folder", "/downloads/torrents", "text", "Where the client saves music, as the client sees it (its own container path). Leave empty to use the client’s default."]],
+  transmission: [["url", "URL", "http://transmission:9091"], ["username", "Username"], ["password", "Password", "", "password"], ["category", "Label", "music"], ["download_path", "Download Folder", "/downloads/torrents", "text", "Where the client saves music, as the client sees it (its own container path). Leave empty to use the client’s default."]],
+  deluge: [["url", "URL", "http://deluge:8112"], ["password", "Web UI Password", "", "password"], ["category", "Label", "music"], ["download_path", "Download Folder", "/downloads/torrents", "text", "Where the client saves music, as the client sees it (its own container path). Leave empty to use the client’s default."]],
+  sabnzbd: [["url", "URL", "http://sabnzbd:8080"], ["api_key", "API Key", "", "password"], ["category", "Category", "music", "text", "Usenet clients pick the folder from the category — set the <b>music</b> category’s folder in the client (e.g. /downloads/usenet)."]],
+  nzbget: [["url", "URL", "http://nzbget:6789"], ["username", "Username"], ["password", "Password", "", "password"], ["category", "Category", "music", "text", "Usenet clients pick the folder from the category — set the <b>music</b> category’s folder in the client (e.g. /downloads/usenet)."]],
   slskd: [["url", "slskd URL", "http://slskd:5030"], ["api_key", "API Key", "", "password"], ["download_path", "slskd Downloads Folder (as Musicarr sees it)", "/downloads/soulseek"]],
   torrent_blackhole: [["download_path", "Torrent Watch Folder"], ["extra.completed_path", "Completed Downloads Folder"]],
   usenet_blackhole: [["download_path", "NZB Watch Folder"], ["extra.completed_path", "Completed Downloads Folder"]],
@@ -871,7 +871,7 @@ const CLIENT_NAMES = { qbittorrent: "qBittorrent", transmission: "Transmission",
 route(/^\/settings\/clients$/, async view => {
   const cl = await api("/res/download_clients");
   settingsPage(view, "Download Clients", `<div class="cards">${cl.map(c => `<div class="card click" data-c="${c.id}"><div class="card-title">${esc(c.name)} ${protoLabel(c.protocol)}</div>
-      <div class="small dim">${esc(CLIENT_NAMES[c.kind])} · ${esc(c.url || c.download_path)}</div><div class="row small" style="margin-top:8px">${c.enabled ? `<span class="label green">Enabled</span>` : `<span class="label gray">Disabled</span>`}<span class="label gray">Priority ${c.priority}</span></div></div>`).join("")}
+      <div class="small dim">${esc(CLIENT_NAMES[c.kind])} · ${esc(c.url || c.download_path)}</div>${c.url && c.download_path ? `<div class="small dim">📁 ${esc(c.download_path)}</div>` : c.kind === "sabnzbd" || c.kind === "nzbget" ? `<div class="small dim">📁 from category “${esc(c.category || "music")}”</div>` : ""}<div class="row small" style="margin-top:8px">${c.enabled ? `<span class="label green">Enabled</span>` : `<span class="label gray">Disabled</span>`}<span class="label gray">Priority ${c.priority}</span></div></div>`).join("")}
     <div class="card add" id="addC">+</div></div>
     <h2>Failed Download Handling</h2><div class="card" id="fdh">${renderFields(fdhFields, state.settings)}<button class="btn primary" id="saveFdh" style="margin-top:10px">Save</button></div>`);
   bindFields($("#fdh"));
@@ -882,7 +882,7 @@ route(/^\/settings\/clients$/, async view => {
       $$("[data-k]", m).forEach(x => x.onclick = () => { m.remove(); if (x.dataset.k === "slskd") { location.hash = "#/settings/soulseek"; return; } open({ kind: x.dataset.k, name: CLIENT_NAMES[x.dataset.k], enabled: 1, priority: 1, remove_completed: 1, category: "music" }); });
       return;
     }
-    const fields = [{ key: "name", label: "Name" }, ...CLIENT_FIELDS[c.kind].map(([k, l, ph, t]) => ({ key: k, label: l, placeholder: ph, type: t || (k.includes("path") ? "folder" : "text") })),
+    const fields = [{ key: "name", label: "Name" }, ...CLIENT_FIELDS[c.kind].map(([k, l, ph, t, help]) => ({ key: k, label: l, placeholder: ph, help, type: t || (k.includes("path") ? "folder" : "text") })),
       { key: "priority", label: "Priority", type: "number", help: "Lower = preferred when several clients share a protocol" },
       { key: "remove_completed", label: "Remove Completed", type: "bool", help: "Remove from the client after import (torrents keep seeding — handle ratio in the client)" },
       { key: "enabled", label: "Enabled", type: "bool" }];
@@ -918,7 +918,7 @@ route(/^\/settings\/soulseek$/, async view => {
   ];
   const dirs = [
     { key: "downloads_dir", label: "slskd Downloads Folder", default: "/downloads/soulseek", help: "Inside the slskd container. Keep it on the same shared downloads mount as Musicarr." },
-    { key: "incomplete_dir", label: "slskd Incomplete Folder", default: "/downloads/soulseek-incomplete" },
+    { key: "incomplete_dir", label: "slskd Incomplete Folder", default: "/app/incomplete", help: "Partial files stay here, inside slskd’s own folder, until they finish" },
   ];
   const searchF = [
     { key: "soulseek_search_timeout_sec", label: "Search Time (seconds)", type: "number" },

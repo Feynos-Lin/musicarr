@@ -42,7 +42,7 @@ Sonarr/Radarr-style automation for music. Add artists, Musicarr tracks their dis
 
 1. Push this folder to `github.com/Feynos-Lin/musicarr`. The included workflow builds `ghcr.io/feynos-lin/musicarr:latest` on every push.
    Then on GitHub: your profile → Packages → musicarr → Package settings → change visibility to **Public** (or `docker login ghcr.io` on the server).
-2. Copy `compose.yaml` into `Documents\Docker\compose\musicarr\`, edit the two folder paths marked `<--`, and add `- musicarr/compose.yaml` to your main compose file's `include:` list. No Soulseek details go in the compose file.
+2. Copy `compose.yaml` into `Documents\Docker\compose\musicarr\`, edit the folder paths marked `<--` (your library plus a separate download folder for torrents, Usenet and Soulseek), and add `- musicarr/compose.yaml` to your main compose file's `include:` list. No Soulseek details go in the compose file.
 3. `docker compose up -d` from PowerShell in your compose folder.
 4. Open `http://192.168.0.25:8689` (or add a `musicarr.feynos.com` proxy host in Nginx Proxy Manager — set a username/password in Settings → General first).
 
@@ -52,7 +52,7 @@ Prefer not to use GHCR? Comment out `image:` and uncomment `build: .` in `compos
 
 1. **Settings → Media Management** — root folder `/music` is added automatically. Check the naming example.
 2. **Settings → Soulseek** — slskd is already connected. Choose a Soulseek username and password (the account is created on first login), check the shared folders and limits, and Save. Musicarr writes slskd's config and logs in.
-3. **Settings → Download Clients** — add your torrent/Usenet clients. If a client runs in another container with different paths, add a Remote Path Mapping.
+3. **Settings → Download Clients** — add your torrent/Usenet clients. Torrent clients get their own Download Folder (e.g. `/downloads/torrents`); for SABnzbd/NZBGet set the `music` category's folder to `/downloads/usenet` in the client. Mount those folders at the same paths in the client containers, or add a Remote Path Mapping if they differ.
 4. **Settings → Indexers** — in Prowlarr, open each indexer and copy its Torznab/Newznab URL + Prowlarr's API key.
 5. **Settings → Connect** — add Navidrome so new music shows up immediately.
 6. **Artists → Library Import** to bring in what you already have, or **Add New**.

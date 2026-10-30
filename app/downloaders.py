@@ -88,6 +88,8 @@ class QBit:
     def grab(cls, c, rel, tag):
         se = cls.s(c)
         data = {"category": c.get("category") or "music", "tags": f"musicarr,{tag}"}
+        if c.get("download_path"):
+            data["savepath"] = c["download_path"]  # per-client folder for torrents
         content, magnet = (None, rel["link"]) if rel["link"].startswith("magnet:") else _fetch_file(rel["link"])
         if content:
             r = se.post(_base(c) + "/api/v2/torrents/add", data=data, files={"torrents": ("r.torrent", content)}, timeout=30)

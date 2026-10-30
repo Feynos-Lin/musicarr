@@ -1,7 +1,8 @@
 # Musicarr + slskd (Soulseek). Drop this folder in Documents\Docker\compose\musicarr
 # and add "- musicarr/compose.yaml" to the include: list in your main compose.yaml.
 #
-# Edit the two host paths marked  <-- below (use forward slashes on Windows, e.g. D:/Media/Music).
+# Edit the host paths marked  <-- below (use forward slashes on Windows, e.g. D:/Media/Music).
+# Each protocol downloads to its own folder; they can be on different drives.
 # Everything else — indexers, download clients and your Soulseek account — is set up in Musicarr's web UI.
 services:
   musicarr:
@@ -17,8 +18,10 @@ services:
       - "8689:8689"
     volumes:
       - ./config:/config
-      - D:/Media/Music:/music            # <-- your music library (the same folder Navidrome reads)
-      - D:/Downloads:/downloads          # <-- shared downloads folder (qBittorrent / SABnzbd / slskd)
+      - D:/Media/Music:/music                       # <-- your music library (the same folder Navidrome reads)
+      - D:/Downloads/Torrents:/downloads/torrents   # <-- torrent downloads (qBittorrent/Transmission/Deluge)
+      - D:/Downloads/Usenet:/downloads/usenet       # <-- Usenet downloads (SABnzbd/NZBGet)
+      - D:/Downloads/Soulseek:/downloads/soulseek   # <-- Soulseek downloads (slskd)
     depends_on:
       - slskd
 
@@ -35,5 +38,11 @@ services:
       # - "5030:5030"        # slskd's own web UI (login slskd/slskd). Only needed for troubleshooting.
     volumes:
       - ./slskd:/app
-      - D:/Downloads:/downloads
+      - D:/Downloads/Soulseek:/downloads/soulseek   # <-- same folder as Musicarr's Soulseek mount
       - D:/Media/Music:/music:ro
+
+# Your torrent and Usenet clients: mount the same host folders at the same container paths
+# (e.g. qBittorrent: D:/Downloads/Torrents:/downloads/torrents, SABnzbd: D:/Downloads/Usenet:/downloads/usenet).
+# Then in Musicarr set qBittorrent's Download Folder to /downloads/torrents, and point SABnzbd's
+# "music" category at /downloads/usenet. If a client uses different paths, add a Remote Path Mapping
+# in Settings → Media Management.
