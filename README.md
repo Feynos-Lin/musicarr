@@ -15,7 +15,7 @@ Sonarr/Radarr-style automation for music. Add artists, Musicarr tracks their dis
 
 **Searching & downloading**
 - Torznab (torrents) and Newznab (Usenet) indexers — works with Prowlarr, Jackett, NZBHydra2
-- Soulseek through [slskd](https://github.com/slskd/slskd): finds complete album folders and scores them against the real tracklist (match %, free slot, speed, queue length)
+- Soulseek through [slskd](https://github.com/slskd/slskd), fully managed from Musicarr's Settings → Soulseek (account, sharing, limits, folders, connect/disconnect). Finds complete album folders and scores them against the real tracklist (match %, free slot, speed, queue length)
 - Download clients: qBittorrent, Transmission, Deluge, SABnzbd, NZBGet, slskd, torrent/Usenet blackhole
 - Quality profiles: FLAC 24-bit → FLAC → ALAC → MP3-320/V0 → AAC… with cutoff, upgrades, preferred / required / ignored words, minimum seeders, protocol preference
 - Decision engine rejects wrong artist/album, discographies, dead torrents, too-small releases, blocklisted releases, non-upgrades
@@ -42,7 +42,7 @@ Sonarr/Radarr-style automation for music. Add artists, Musicarr tracks their dis
 
 1. Push this folder to `github.com/Feynos-Lin/musicarr`. The included workflow builds `ghcr.io/feynos-lin/musicarr:latest` on every push.
    Then on GitHub: your profile → Packages → musicarr → Package settings → change visibility to **Public** (or `docker login ghcr.io` on the server).
-2. Copy `compose.yaml` into `Documents\Docker\compose\musicarr\`, edit the paths marked `<--`, and add `- musicarr/compose.yaml` to your main compose file's `include:` list.
+2. Copy `compose.yaml` into `Documents\Docker\compose\musicarr\`, edit the two folder paths marked `<--`, and add `- musicarr/compose.yaml` to your main compose file's `include:` list. No Soulseek details go in the compose file.
 3. `docker compose up -d` from PowerShell in your compose folder.
 4. Open `http://192.168.0.25:8689` (or add a `musicarr.feynos.com` proxy host in Nginx Proxy Manager — set a username/password in Settings → General first).
 
@@ -51,10 +51,11 @@ Prefer not to use GHCR? Comment out `image:` and uncomment `build: .` in `compos
 ## First-run setup
 
 1. **Settings → Media Management** — root folder `/music` is added automatically. Check the naming example.
-2. **Settings → Download Clients** — add slskd (URL `http://slskd:5030`, the API key from compose, downloads folder `/downloads/soulseek`) plus your torrent/Usenet clients. If a client runs in another container with different paths, add a Remote Path Mapping.
-3. **Settings → Indexers** — in Prowlarr, open each indexer and copy its Torznab/Newznab URL + Prowlarr's API key.
-4. **Settings → Connect** — add Navidrome so new music shows up immediately.
-5. **Artists → Library Import** to bring in what you already have, or **Add New**.
+2. **Settings → Soulseek** — slskd is already connected. Choose a Soulseek username and password (the account is created on first login), check the shared folders and limits, and Save. Musicarr writes slskd's config and logs in.
+3. **Settings → Download Clients** — add your torrent/Usenet clients. If a client runs in another container with different paths, add a Remote Path Mapping.
+4. **Settings → Indexers** — in Prowlarr, open each indexer and copy its Torznab/Newznab URL + Prowlarr's API key.
+5. **Settings → Connect** — add Navidrome so new music shows up immediately.
+6. **Artists → Library Import** to bring in what you already have, or **Add New**.
 
 Every connection has a **Test** button.
 

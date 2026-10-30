@@ -1,17 +1,18 @@
 # Musicarr + slskd (Soulseek). Drop this folder in Documents\Docker\compose\musicarr
 # and add "- musicarr/compose.yaml" to the include: list in your main compose.yaml.
 #
-# Edit the three host paths marked  <-- below. On Windows, use forward slashes, e.g. D:/Media/Music
+# Edit the two host paths marked  <-- below (use forward slashes on Windows, e.g. D:/Media/Music).
+# Everything else — indexers, download clients and your Soulseek account — is set up in Musicarr's web UI.
 services:
   musicarr:
     image: ghcr.io/feynos-lin/musicarr:latest
-    # build: .            # or build locally from this folder instead of pulling
     container_name: musicarr
     restart: unless-stopped
     environment:
       - TZ=America/Denver
       - PUID=1000
       - PGID=1000
+      - MUSICARR_SLSKD_URL=http://slskd:5030      # Musicarr adds slskd automatically on first start
     ports:
       - "8689:8689"
     volumes:
@@ -27,18 +28,11 @@ services:
     restart: unless-stopped
     environment:
       - TZ=America/Denver
-      - SLSKD_REMOTE_CONFIGURATION=true
-      - SLSKD_SLSK_USERNAME=change-me            # <-- pick a Soulseek username (account is created on first login)
-      - SLSKD_SLSK_PASSWORD=change-me
-      - SLSKD_USERNAME=admin                     # slskd web UI login
-      - SLSKD_PASSWORD=change-me
-      - SLSKD_API_KEY=change-this-to-a-long-random-string   # paste this into Musicarr → Download Clients → slskd
-      - SLSKD_DOWNLOADS_DIR=/downloads/soulseek
-      - SLSKD_INCOMPLETE_DIR=/downloads/soulseek-incomplete
-      - SLSKD_SHARED_DIR=/music
+      - SLSKD_REMOTE_CONFIGURATION=true   # lets Musicarr manage slskd's settings
+      # Don't add SLSKD_SLSK_* / SLSKD_*_DIR variables here: they would override what you set in Musicarr.
     ports:
-      - "5030:5030"          # slskd web UI
-      - "50300:50300"        # Soulseek listen port — forward on your router for faster transfers
+      - "50300:50300"        # Soulseek listen port — forward it on your router for faster transfers
+      # - "5030:5030"        # slskd's own web UI (login slskd/slskd). Only needed for troubleshooting.
     volumes:
       - ./slskd:/app
       - D:/Downloads:/downloads

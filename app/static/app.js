@@ -879,7 +879,7 @@ route(/^\/settings\/clients$/, async view => {
   const open = (c) => {
     if (!c.kind) {
       const m = modal({ title: "Add Download Client", body: `<div class="cards">${Object.entries(CLIENT_NAMES).map(([k, n]) => `<div class="card click" data-k="${k}"><div class="card-title">${esc(n)}</div>${protoLabel(state.meta.download_client_kinds[k])}</div>`).join("")}</div>` });
-      $$("[data-k]", m).forEach(x => x.onclick = () => { m.remove(); open({ kind: x.dataset.k, name: CLIENT_NAMES[x.dataset.k], enabled: 1, priority: 1, remove_completed: 1, category: "music" }); });
+      $$("[data-k]", m).forEach(x => x.onclick = () => { m.remove(); if (x.dataset.k === "slskd") { location.hash = "#/settings/soulseek"; return; } open({ kind: x.dataset.k, name: CLIENT_NAMES[x.dataset.k], enabled: 1, priority: 1, remove_completed: 1, category: "music" }); });
       return;
     }
     const fields = [{ key: "name", label: "Name" }, ...CLIENT_FIELDS[c.kind].map(([k, l, ph, t]) => ({ key: k, label: l, placeholder: ph, type: t || (k.includes("path") ? "folder" : "text") })),
@@ -889,16 +889,89 @@ route(/^\/settings\/clients$/, async view => {
     const intro = c.kind === "slskd" ? `<p class="small muted">Musicarr drives Soulseek through <a href="https://github.com/slskd/slskd" target="_blank" rel="noopener">slskd</a>. Enable the API in slskd (<code>web.authentication.api_keys</code>) and mount slskd's downloads folder into Musicarr. Searches look for complete album folders and score them against the MusicBrainz tracklist.</p>` : "";
     editResource("download_clients", c, fields, router, { title: CLIENT_NAMES[c.kind], test: true, intro });
   };
-  $$("[data-c]").forEach(x => x.onclick = () => open(cl.find(c => c.id === +x.dataset.c)));
+  $$("[data-c]").forEach(x => x.onclick = () => { const c = cl.find(c => c.id === +x.dataset.c); if (c.kind === "slskd") location.hash = "#/settings/soulseek"; else open(c); });
   $("#addC").onclick = () => open({});
 });
+/* ---------- Soulseek ---------- */
+route(/^\/settings\/soulseek$/, async view => {
+  const st = await api("/soulseek");
+  const conn = st.client || {};
+  const connFields = [
+    { key: "url", label: "slskd URL", placeholder: "http://slskd:5030", help: "Musicarr talks to Soulseek through slskd, which runs next to it in the same compose file" },
+    { key: "username", label: "slskd Web Username", default: "slskd" },
+    { key: "password", label: "slskd Web Password", type: "password", placeholder: conn.has_password ? "•••••••• (unchanged)" : "slskd" },
+    { key: "download_path", label: "Downloads Folder (as Musicarr sees it)", type: "folder", default: "/downloads/soulseek" },
+  ];
+  const s = st.settings || {};
+  const acct = [
+    { key: "soulseek_username", label: "Soulseek Username", help: "Any unused name — Soulseek creates the account the first time it logs in. Pick something unique." },
+    { key: "soulseek_password", label: "Soulseek Password", type: "password", placeholder: s.has_soulseek_password ? "•••••••• (unchanged)" : "" },
+    { key: "description", label: "Profile Description", placeholder: "Shown to other users" },
+    { key: "listen_port", label: "Listen Port", type: "number", default: 50300, help: "Forward this TCP port on your router to the server for faster, more reliable transfers" },
+  ];
+  const share = [
+    { key: "share_dirs", label: "Shared Folders", type: "textarea", default: "/music", help: "One folder per line, as slskd sees them. Many Soulseek users won't upload to people who share nothing — sharing your library (read-only) gets you better results." },
+    { key: "upload_slots", label: "Upload Slots", type: "number", placeholder: "20" },
+    { key: "upload_speed_limit", label: "Upload Limit (KiB/s)", type: "number", placeholder: "unlimited" },
+    { key: "download_slots", label: "Download Slots", type: "number", placeholder: "unlimited" },
+    { key: "download_speed_limit", label: "Download Limit (KiB/s)", type: "number", placeholder: "unlimited" },
+  ];
+  const dirs = [
+    { key: "downloads_dir", label: "slskd Downloads Folder", default: "/downloads/soulseek", help: "Inside the slskd container. Keep it on the same shared downloads mount as Musicarr." },
+    { key: "incomplete_dir", label: "slskd Incomplete Folder", default: "/downloads/soulseek-incomplete" },
+  ];
+  const searchF = [
+    { key: "soulseek_search_timeout_sec", label: "Search Time (seconds)", type: "number" },
+    { key: "soulseek_min_upload_speed_kbps", label: "Minimum Peer Speed (KB/s)", type: "number", help: "Skip peers slower than this. 0 = any" },
+    { key: "soulseek_max_queue", label: "Max Peer Queue", type: "number", help: "Skip peers with more queued uploads than this" },
+    { key: "allow_partial_soulseek", label: "Allow Incomplete Folders", type: "bool", help: "Accept folders with fewer files than the tracklist" },
+  ];
+  const stateLabel = !st.configured ? `<span class="label gray">Not set up</span>` : !st.reachable ? `<span class="label red">slskd unreachable</span>`
+    : st.logged_in ? `<span class="label green">Logged in</span>` : st.connected ? `<span class="label orange">Connected, not logged in</span>` : `<span class="label red">${esc(st.state || "Disconnected")}</span>`;
+  const manageable = st.configured && st.reachable && st.remote_config;
+  settingsPage(view, "Soulseek", `
+    <div class="card"><div class="row"><b>Status</b> ${stateLabel}
+      ${st.version ? `<span class="dim small">slskd ${esc(st.version)}</span>` : ""}${st.shares != null ? `<span class="dim small">· sharing ${st.shares} files</span>` : ""}
+      <span class="grow"></span>
+      ${st.reachable ? `<button class="btn sm" id="slReconnect">Reconnect</button>${st.connected ? `<button class="btn sm" id="slDisconnect">Disconnect</button>` : `<button class="btn sm primary" id="slConnect">Connect</button>`}` : ""}
+      <button class="btn sm" id="slRefresh">⟳</button></div>
+      ${st.error ? `<div class="small rej" style="margin-top:8px">${esc(st.error)}</div>` : ""}
+      ${st.reachable && !st.remote_config ? `<div class="health warning" style="margin-top:10px">⚠ ${esc(st.config_error || "slskd isn't allowing remote configuration")}</div>` : ""}
+      ${st.reachable && st.remote_config && !s.soulseek_username ? `<div class="health warning" style="margin-top:10px">Pick a Soulseek username and password below to get online.</div>` : ""}
+    </div>
+    <h2>slskd Connection</h2><div class="card" id="slConn">${renderFields(connFields, conn)}<button class="btn" id="slSaveConn" style="margin-top:10px">Save Connection</button></div>
+    ${manageable ? `
+    <h2>Soulseek Account</h2><div class="card" id="slAcct">${renderFields(acct, s)}</div>
+    <h2>Sharing &amp; Limits</h2><div class="card" id="slShare">${renderFields(share, s)}</div>
+    <h2>Folders</h2><div class="card" id="slDirs">${renderFields(dirs, s)}</div>` : ""}
+    <h2>Search</h2><div class="card" id="slSearch">${renderFields(searchF, state.settings)}</div>
+    <div style="margin-top:16px"><button class="btn primary" id="slSave">Save Changes</button></div>`);
+  bindFields(view);
+  $("#slRefresh").onclick = router;
+  const act = a => async () => { await run(() => post("/soulseek/" + a), a === "disconnect" ? "Disconnected" : "Connecting…"); setTimeout(router, 2500); };
+  if ($("#slConnect")) $("#slConnect").onclick = act("connect");
+  if ($("#slDisconnect")) $("#slDisconnect").onclick = act("disconnect");
+  if ($("#slReconnect")) $("#slReconnect").onclick = act("reconnect");
+  $("#slSaveConn").onclick = async () => {
+    const v = readFields($("#slConn"), connFields);
+    if (!v.url) return toast("Enter the slskd URL", "warn");
+    await run(() => put("/soulseek/connection", v), "Connection saved"); await loadShared(true); router();
+  };
+  $("#slSave").onclick = async () => {
+    const b = $("#slSave"); b.disabled = true;
+    const v = readFields($("#slSearch"), searchF);
+    if (manageable) Object.assign(v, readFields($("#slAcct"), acct), readFields($("#slShare"), share), readFields($("#slDirs"), dirs));
+    try {
+      const r = await put("/soulseek", v);
+      toast(r.reconnected ? "Saved — reconnecting to Soulseek…" : "Saved");
+      await loadShared(true); setTimeout(router, r.reconnected ? 3000 : 300);
+    } catch (e) { toast(e.message, "error"); b.disabled = false; }
+  };
+});
+
 const fdhFields = [
   { key: "failed_download_handling", label: "Failed Download Handling", type: "bool", help: "Blocklist failed/stalled downloads and remove them from the client" },
   { key: "redownload_failed", label: "Redownload", type: "bool", help: "Automatically search for a different release when one fails" },
-  { key: "soulseek_search_timeout_sec", label: "Soulseek Search Time (s)", type: "number" },
-  { key: "soulseek_min_upload_speed_kbps", label: "Soulseek Minimum Upload Speed (KB/s)", type: "number", help: "Skip peers slower than this. 0 = any" },
-  { key: "soulseek_max_queue", label: "Soulseek Max Peer Queue", type: "number" },
-  { key: "allow_partial_soulseek", label: "Allow Incomplete Soulseek Folders", type: "bool", help: "Accept folders with fewer files than the tracklist" },
 ];
 
 const LIST_FIELDS = {

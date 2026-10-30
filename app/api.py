@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import db, downloaders, importer, indexers, library, musicbrainz as mb, notify, search, soulseek, tasks
+from . import db, downloaders, importer, indexers, library, musicbrainz as mb, notify, search, slskd_admin, soulseek, tasks
 from .db import QUALITIES
 from .util import LOG_BUFFER, VERSION, fmt_size, log
 
@@ -598,6 +598,35 @@ async def stats(req):
     })
 
 
+# ---------------- Soulseek (slskd management) ----------------
+async def slsk_status(req):
+    return J(await off(slskd_admin.status))
+
+
+@err
+async def slsk_save(req):
+    d = await body(req)
+    search_keys = ("soulseek_search_timeout_sec", "soulseek_min_upload_speed_kbps", "soulseek_max_queue", "allow_partial_soulseek")
+    for k in search_keys:
+        if k in d:
+            db.set_setting(k, d.pop(k))
+    res = {"ok": True}
+    if any(k in d for k in list(slskd_admin.FIELDS) + ["share_dirs"]):
+        res = await off(slskd_admin.save, d)
+    return J(res)
+
+
+@err
+async def slsk_connection(req):
+    return J(await off(slskd_admin.save_connection, await body(req)))
+
+
+@err
+async def slsk_action(req):
+    fn = {"connect": slskd_admin.connect, "disconnect": slskd_admin.disconnect, "reconnect": slskd_admin.reconnect}[req.path_params["action"]]
+    return J(await off(fn))
+
+
 P = "/api/v1"
 routes = [
     Route(P + "/system/status", status), Route(P + "/health", health), Route(P + "/logs", logs), Route(P + "/meta", meta),
@@ -630,6 +659,9 @@ routes = [
     Route(P + "/tasks", task_list),
     Route(P + "/library/unmapped", unmapped), Route(P + "/library/import", library_import, methods=["POST"]),
     Route(P + "/filesystem", filesystem),
+    Route(P + "/soulseek", slsk_status), Route(P + "/soulseek", slsk_save, methods=["PUT"]),
+    Route(P + "/soulseek/connection", slsk_connection, methods=["PUT"]),
+    Route(P + "/soulseek/{action}", slsk_action, methods=["POST"]),
     Route(P + "/res/{res}/test", res_test, methods=["POST"]),
     Route(P + "/res/{res}", res_list), Route(P + "/res/{res}", res_create, methods=["POST"]),
     Route(P + "/res/{res}/{id:int}", res_update, methods=["PUT"]),

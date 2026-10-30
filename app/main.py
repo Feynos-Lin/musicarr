@@ -12,7 +12,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import api, db, tasks
+from . import api, db, slskd_admin, tasks
 from .util import VERSION, log, setup_logging
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -55,6 +55,7 @@ async def ping(req):
 async def lifespan(app):
     setup_logging()
     db.init()
+    slskd_admin.ensure_client()
     tasks.start(asyncio.get_running_loop())
     log.info("Musicarr %s started — config in %s", VERSION, db.CONFIG_DIR)
     yield
