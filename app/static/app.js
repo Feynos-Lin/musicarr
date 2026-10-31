@@ -36,6 +36,9 @@ const size = n => { n = n || 0; for (const u of ["B","KB","MB","GB","TB"]) { if 
 const year = d => (d || "").slice(0, 4) || "TBA";
 const ago = iso => { if (!iso) return "—"; const s = (Date.now() - new Date(iso)) / 1000; if (s < 60) return "just now"; if (s < 3600) return Math.floor(s/60) + "m ago"; if (s < 86400) return Math.floor(s/3600) + "h ago"; return Math.floor(s/86400) + "d ago"; };
 const fmtDate = iso => iso ? new Date(iso).toLocaleString() : "—";
+const vhash = s => { let h = 0; for (const c of String(s || "")) h = (h * 31 + c.charCodeAt(0)) | 0; return (h >>> 0).toString(36); };
+const coverUrl = (kind, id, size, ver) => `${API}/mediacover/${kind}/${id}?size=${size}&v=${vhash(ver)}`;
+const lazyImg = (src, cls = "") => `<img class="lazy ${cls}" src="${esc(src)}" loading="lazy" decoding="async" alt="" onerror="this.remove()">`;
 const initials = n => (n || "?").replace(/^the /i, "").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 function qualityLabel(q) {
   if (!q) return "";
@@ -185,8 +188,9 @@ async function command(name) {
 
 /* ================= ARTISTS ================= */
 route(/^\/artists$/, async view => {
-  const artists = await api("/artists");
-  state.artists = artists;
+  let artists = state.artists;
+  const fresh = api("/artists");
+  if (!artists) artists = state.artists = await fresh;
   let mode = store.get("artistView", "posters"), sort = store.get("artistSort", "name"), filter = store.get("artistFilter", "all");
   const sorters = {
     name: (a, b) => (a.sort_name || a.name).localeCompare(b.sort_name || b.name),
@@ -215,7 +219,7 @@ route(/^\/artists$/, async view => {
       body = `<div class="page"><div class="posters">${list.map(a => `
         <div class="poster" data-id="${a.id}">
           ${a.monitored ? "" : `<span class="label gray unmon">Unmonitored</span>`}
-          <div class="img" style="${a.image ? `background-image:url('${esc(a.image)}')` : ""}">${a.image ? "" : esc(initials(a.name))}</div>
+          <div class="img">${esc(initials(a.name))}${lazyImg(coverUrl("artist", a.id, 250, a.image || a.albums))}</div>
           <div class="meta"><div class="name" title="${esc(a.name)}">${esc(a.name)}</div>
           <div class="sub">${a.albums} albums · ${size(a.size)}</div>
           ${progressBar(a.track_have, a.track_total)}</div></div>`).join("")}</div>
@@ -240,6 +244,11 @@ route(/^\/artists$/, async view => {
     $$("[data-id]", view).forEach(el => el.onclick = () => location.hash = "#/artist/" + el.dataset.id);
   };
   draw();
+  fresh.then(list => {
+    const changed = JSON.stringify(list) !== JSON.stringify(state.artists);
+    state.artists = list;
+    if (changed && location.hash.replace(/^#/, "") === "/artists") { artists = list; const y = window.scrollY; draw(); window.scrollTo(0, y); }
+  }).catch(() => {});
 });
 
 /* ================= ADD NEW ================= */
@@ -416,8 +425,8 @@ route(/^\/artist\/(\d+)$/, async (view, id) => {
     view.innerHTML = toolbar([
       { act: "refresh", icon: "⟳", label: "Refresh & Scan" }, { act: "search", icon: "⌕", label: "Search Monitored" },
       { act: "manual", icon: "⇲", label: "Manual Import" }, { act: "artwork", icon: "▣", label: "Update Artwork" }, "|", { act: "edit", icon: "✎", label: "Edit" }, { act: "delete", icon: "🗑", label: "Delete" },
-    ]) + `<div class="hero"><div class="bg" style="background-image:url('${esc(a.image || "")}')"></div>
-      <div class="art" style="background-image:url('${esc(a.image || "")}')"></div>
+    ]) + `<div class="hero"><div class="bg" style="background-image:url('${coverUrl("artist", a.id, 100, a.image || a.albums.length)}')"></div>
+      <div class="art">${lazyImg(coverUrl("artist", a.id, 500, a.image || a.albums.length))}</div>
       <div class="grow"><div class="row"><button class="monitor ${a.monitored ? "on" : ""}" id="artMon" title="Toggle monitoring">${a.monitored ? "★" : "☆"}</button>
         <h1>${esc(a.name)}</h1>${a.disambiguation ? `<span class="muted">(${esc(a.disambiguation)})</span>` : ""}</div>
         <div class="facts"><span class="label gray">📁 ${esc(a.path)}</span><span class="label blue">${esc(profName(a.quality_profile_id))}</span>
@@ -482,7 +491,7 @@ function albumRow(al) {
     : al.monitored ? `<span class="label red">Missing</span>` : `<span class="label gray">Unmonitored</span>`;
   return `<div class="album-row" data-al="${al.id}">
     <button class="monitor al-mon ${al.monitored ? "on" : ""}">${al.monitored ? "★" : "☆"}</button>
-    <div class="cover" style="background-image:url('${esc(al.cover || "")}')"></div>
+    <div class="cover">${lazyImg(coverUrl("album", al.id, 100, (al.cover || "") + al.track_have))}</div>
     <div><div class="title al-open">${esc(al.title)}</div><div class="small dim">${esc(al.release_date || "TBA")} · ${al.track_total} tracks${al.size ? " · " + size(al.size) : ""}</div></div>
     <div class="hide-sm">${progressBar(al.track_have, al.track_total, true)}</div>
     <div>${status}</div>
@@ -527,7 +536,7 @@ async function albumDetails(id, redraw) {
   const discs = [...new Set(al.tracks.map(t => t.disc))];
   const m = modal({ wide: true, title: `${esc(al.artist.name)} — ${esc(al.title)}`, body: `
     <div class="row" style="align-items:flex-start;gap:18px">
-      <img src="${esc(al.cover)}" onerror="this.style.visibility='hidden'" style="width:180px;height:180px;border-radius:8px;object-fit:cover;background:#262a34">
+      <img src="${coverUrl("album", al.id, 500, (al.cover || "") + al.tracks.filter(t => t.file_path).length)}" onerror="this.style.visibility='hidden'" style="width:180px;height:180px;border-radius:8px;object-fit:cover;background:#262a34">
       <div class="grow"><div class="row" style="margin-bottom:8px"><span class="label gray">${esc(al.album_type)}</span>${(al.secondary_types || []).map(s => `<span class="label gray">${esc(s)}</span>`).join("")}
         <span class="label gray">${esc(al.release_date || "TBA")}</span>${qualityLabel(al.quality)}<span class="label ${al.monitored ? "green" : "gray"}">${al.monitored ? "Monitored" : "Unmonitored"}</span></div>
         <div class="field"><label>Release used for tracklist</label><div><select id="relSel"><option>Loading releases…</option></select><div class="help">Pick a specific edition (deluxe, remaster, a different track count…). Tracks re-match after changing.</div></div></div>
@@ -817,7 +826,7 @@ route(/^\/settings\/media$/, async view => {
     { key: "recycle_bin", label: "Recycle Bin", type: "folder", help: "Replaced/deleted files go here instead of being deleted. Empty = delete" },
     { key: "unmonitor_deleted", label: "Unmonitor Deleted Albums", type: "bool", help: "If files disappear from disk, unmonitor the album instead of re-downloading" },
   ];
-  const roots = await api("/res/root_folders");
+  const roots = await api("/res/root_folders?details=1");
   const maps = await api("/res/remote_path_mappings");
   const clients = await api("/res/download_clients");
   settingsPage(view, "Media Management", `
@@ -1180,7 +1189,7 @@ $("#menuToggle").onclick = () => document.body.classList.toggle("nav-open");
     if (!t) return box.classList.add("hidden");
     if (!state.artists) state.artists = await api("/artists");
     const hits = state.artists.filter(a => a.name.toLowerCase().includes(t)).slice(0, 8);
-    box.innerHTML = hits.map(a => `<a href="#/artist/${a.id}"><img src="${esc(a.image || "")}" onerror="this.style.visibility='hidden'">${esc(a.name)}</a>`).join("") +
+    box.innerHTML = hits.map(a => `<a href="#/artist/${a.id}"><img src="${coverUrl("artist", a.id, 100, a.image || a.albums)}" loading="lazy" onerror="this.style.visibility='hidden'">${esc(a.name)}</a>`).join("") +
       `<a href="#/add/${encodeURIComponent(inp.value.trim())}" class="muted">+ Search MusicBrainz for “${esc(inp.value.trim())}”</a>`;
     box.classList.remove("hidden");
   };

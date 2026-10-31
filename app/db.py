@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS remote_path_mappings (id INTEGER PRIMARY KEY, client_
 CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_history_album ON history(album_id);
+CREATE INDEX IF NOT EXISTS idx_albums_release ON albums(release_date);
+CREATE INDEX IF NOT EXISTS idx_tracks_album_file ON tracks(album_id, file_path);
+CREATE INDEX IF NOT EXISTS idx_queue_status ON queue(status);
 """
 
 DEFAULT_SETTINGS = {
@@ -127,6 +130,10 @@ def conn():
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA foreign_keys=ON")
+        _conn.execute("PRAGMA synchronous=NORMAL")   # safe with WAL, far fewer fsyncs
+        _conn.execute("PRAGMA cache_size=-32000")    # 32 MB page cache
+        _conn.execute("PRAGMA temp_store=MEMORY")
+        _conn.execute("PRAGMA mmap_size=134217728")
     return _conn
 
 

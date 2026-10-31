@@ -307,6 +307,11 @@ def update_album(album_id, data=None, url=None, replace=True, missing_only=False
     if source in ("custom", "picked") or wrote:
         db.update("albums", album_id, {"cover": f"/api/v1/albums/{album_id}/cover?v={db.now()}"} if source == "custom"
                   else {"cover": url} if source == "picked" else {})
+    try:
+        from . import mediacover
+        mediacover.invalidate("album", album_id)
+    except Exception:
+        pass
     db.add_history("artworkUpdated", album_id, source_title=album["title"], data={"source": source, "embedded": embedded, "cover_file": wrote})
     log.info("Artwork for %s: %s, embedded in %d file(s)%s", album["title"], source, embedded, ", saved cover file" if wrote else "")
     return {"album_id": album_id, "embedded": embedded, "files": len(files), "cover_file": wrote, "source": source}

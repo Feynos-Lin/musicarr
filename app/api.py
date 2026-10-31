@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import artwork, db, downloaders, importer, indexers, library, musicbrainz as mb, notify, search, slskd_admin, soulseek, tasks
+from . import artwork, db, mediacover, downloaders, importer, indexers, library, musicbrainz as mb, notify, search, slskd_admin, soulseek, tasks
 from .db import QUALITIES
 from .util import LOG_BUFFER, VERSION, fmt_size, log
 
@@ -60,6 +60,8 @@ def artist_rows():
     last = {r["artist_id"]: r for r in db.q("""SELECT artist_id, title, MAX(release_date) d FROM albums
                                               WHERE release_date <= date('now') GROUP BY artist_id""")}
     for a in arts:
+        a.pop("overview", None)
+        a.pop("links", None)
         s = sm.get(a["id"], {})
         a.update(albums=s.get("albums", 0), monitored_albums=s.get("monitored_albums", 0) or 0,
                  track_total=s.get("tracks", 0) or 0, track_have=s.get("have", 0) or 0, size=s.get("size", 0) or 0,
@@ -463,12 +465,14 @@ def _res(req):
 async def res_list(req):
     r = _res(req)
     rows = [db.decode(x) for x in db.q(f"SELECT * FROM {r} ORDER BY id")]
-    if r == "root_folders":
+    if r == "root_folders" and req.query_params.get("details"):
+        # disk usage + unmapped folder counts walk the music folders, so only the settings page asks for them
+        unmapped = await off(importer.unmapped_folders)
         for x in rows:
             try:
                 du = shutil.disk_usage(x["path"])
                 x["free"], x["total"] = du.free, du.total
-                x["unmapped"] = sum(1 for u in importer.unmapped_folders() if u["root_folder"] == x["path"])
+                x["unmapped"] = sum(1 for u in unmapped if u["root_folder"] == x["path"])
             except OSError:
                 x["free"] = x["total"] = None
                 x["missing"] = True
@@ -638,6 +642,22 @@ async def album_cover(req):
     return FileResponse(p, headers={"Cache-Control": "max-age=86400"})
 
 
+async def media_cover(req):
+    from starlette.responses import FileResponse, Response
+    kind = req.path_params["kind"]
+    if kind not in ("artist", "album"):
+        return Response(status_code=404)
+    try:
+        size = int(req.query_params.get("size", 250))
+    except ValueError:
+        size = 250
+    p = await off(mediacover.get, kind, int(req.path_params["id"]), size)
+    cache = "public, max-age=2592000, immutable" if req.query_params.get("v") else "no-cache"
+    if not p:
+        return Response(status_code=404, headers={"Cache-Control": "public, max-age=3600"})
+    return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": cache})
+
+
 async def artist_artwork(req):
     aid = int(req.path_params["id"])
     d = await body(req)
@@ -707,6 +727,7 @@ routes = [
     Route(P + "/albums/{id:int}/files", album_delete_files, methods=["DELETE"]),
     Route(P + "/albums/{id:int}/artwork", album_artwork_get), Route(P + "/albums/{id:int}/artwork", album_artwork_set, methods=["POST"]),
     Route(P + "/albums/{id:int}/cover", album_cover),
+    Route(P + "/mediacover/{kind}/{id:int}", media_cover),
     Route(P + "/artwork/library", library_artwork, methods=["POST"]),
     Route(P + "/calendar", calendar), Route("/feed/calendar.ics", calendar_ics),
     Route(P + "/wanted/missing", wanted_missing), Route(P + "/wanted/cutoff", wanted_cutoff),

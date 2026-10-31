@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
@@ -16,6 +17,16 @@ from . import api, db, slskd_admin, tasks
 from .util import VERSION, log, setup_logging
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+# app.js/style.css are cached by the browser for a year; the version changes whenever they do
+ASSET_VERSION = str(int(max(os.path.getmtime(os.path.join(STATIC, f)) for f in ("app.js", "style.css"))))
+
+
+class CachedStatic(StaticFiles):
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        if resp.status_code == 200 and b"v=" in scope.get("query_string", b""):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
 
 
 class Auth(BaseHTTPMiddleware):
@@ -50,7 +61,9 @@ async def server_error(req, exc):
 
 
 async def index(req):
-    return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
+    html = open(os.path.join(STATIC, "index.html")).read().replace("__V__", ASSET_VERSION)
+    from starlette.responses import HTMLResponse
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 async def ping(req):
@@ -69,8 +82,8 @@ async def lifespan(app):
 
 app = Starlette(
     routes=[Route("/", index), Route("/ping", ping), *api.routes,
-            Mount("/static", StaticFiles(directory=STATIC), name="static")],
-    middleware=[Middleware(Auth)],
+            Mount("/static", CachedStatic(directory=STATIC), name="static")],
+    middleware=[Middleware(GZipMiddleware, minimum_size=1024), Middleware(Auth)],
     lifespan=lifespan,
     exception_handlers={Exception: server_error},
 )
