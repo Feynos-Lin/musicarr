@@ -24,6 +24,7 @@ SCHEDULE = {  # name: (setting key, unit seconds, default)
     "Refresh Artists": ("refresh_interval_hours", 3600, 12),
     "Library Scan": ("library_scan_interval_hours", 3600, 24),
     "Import List Sync": (None, 3600, 12),
+    "Artwork Scan": ("artwork_interval_days", 86400, 7),
     "Backup": (None, 86400, 7),
     "Housekeeping": (None, 86400, 1),
 }
@@ -226,7 +227,17 @@ def housekeeping():
     return "Done"
 
 
-TASKS = {"RSS Sync": rss_sync, "Missing Album Search": missing_search, "Refresh Artists": refresh_all,
+def artwork_scan():
+    from . import artwork
+    return artwork.update_library(replace=False, missing_only=True)
+
+
+def artwork_refresh_all():
+    from . import artwork
+    return artwork.update_library(replace=True, missing_only=False)
+
+
+TASKS = {"Artwork Scan": artwork_scan, "Refresh All Artwork": artwork_refresh_all, "RSS Sync": rss_sync, "Missing Album Search": missing_search, "Refresh Artists": refresh_all,
          "Library Scan": library_scan, "Import List Sync": import_list_sync, "Backup": backup,
          "Housekeeping": housekeeping, "Check Downloads": lambda: check_downloads(), "Cutoff Unmet Search": cutoff_search}
 

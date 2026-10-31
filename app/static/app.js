@@ -415,7 +415,7 @@ route(/^\/artist\/(\d+)$/, async (view, id) => {
     const collapsed = store.get("collapsed", {});
     view.innerHTML = toolbar([
       { act: "refresh", icon: "⟳", label: "Refresh & Scan" }, { act: "search", icon: "⌕", label: "Search Monitored" },
-      { act: "manual", icon: "⇲", label: "Manual Import" }, "|", { act: "edit", icon: "✎", label: "Edit" }, { act: "delete", icon: "🗑", label: "Delete" },
+      { act: "manual", icon: "⇲", label: "Manual Import" }, { act: "artwork", icon: "▣", label: "Update Artwork" }, "|", { act: "edit", icon: "✎", label: "Edit" }, { act: "delete", icon: "🗑", label: "Delete" },
     ]) + `<div class="hero"><div class="bg" style="background-image:url('${esc(a.image || "")}')"></div>
       <div class="art" style="background-image:url('${esc(a.image || "")}')"></div>
       <div class="grow"><div class="row"><button class="monitor ${a.monitored ? "on" : ""}" id="artMon" title="Toggle monitoring">${a.monitored ? "★" : "☆"}</button>
@@ -439,6 +439,12 @@ route(/^\/artist\/(\d+)$/, async (view, id) => {
       refresh: async () => { await run(() => post(`/artists/${id}/refresh`), "Refreshing…"); setTimeout(draw, 4000); },
       search: () => run(() => post(`/artists/${id}/search`), "Searching monitored albums…"),
       manual: () => manualImport(null, a),
+      artwork: async () => {
+        const r = await confirmBox("Update artwork", `Fetch covers from the Cover Art Archive for every album of ${esc(a.name)} that has files, embed them and save cover.jpg.`, "Update", false,
+          `<label class="row"><input type="checkbox" name="replace" checked> Replace artwork that's already there</label>`);
+        if (!r) return;
+        await run(() => post(`/artists/${id}/artwork`, { replace: r.replace, missing_only: !r.replace }), "Updating artwork… (progress in System → Tasks)");
+      },
       edit: () => editArtist(a, draw),
       delete: async () => {
         const r = await confirmBox(`Delete ${esc(a.name)}`, "Remove this artist from Musicarr?", "Delete", true,
@@ -528,14 +534,19 @@ async function albumDetails(id, redraw) {
         <div class="field"><label>Folder</label><div class="small">${esc(al.path || "—")}</div></div>
         <div class="row"><a class="btn sm" target="_blank" rel="noopener" href="https://musicbrainz.org/release-group/${al.mbid}">MusicBrainz</a>
           <button class="btn sm" id="delFiles">Delete files</button></div></div></div>
-    <div class="tabs"><a class="on" data-t="tracks">Tracks</a><a data-t="history">History</a></div>
+    <div class="tabs"><a class="on" data-t="tracks">Tracks</a><a data-t="artwork">Artwork</a><a data-t="history">History</a></div>
     <div data-p="tracks"><table class="track-table"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Quality</th><th>File</th></tr></thead><tbody>
       ${al.tracks.map(t => `<tr><td class="dim">${discs.length > 1 ? t.disc + "-" : ""}${t.position}</td><td>${esc(t.title)}${t.artist_credit && t.artist_credit !== al.artist.name ? `<div class="dim small">${esc(t.artist_credit)}</div>` : ""}</td>
         <td class="dim">${t.length_ms ? Math.floor(t.length_ms / 60000) + ":" + String(Math.floor(t.length_ms / 1000) % 60).padStart(2, "0") : ""}</td>
         <td>${t.file_path ? qualityLabel(t.quality) : `<span class="label red">Missing</span>`}</td><td class="small dim"><span class="ell" title="${esc(t.file_path || "")}">${esc((t.file_path || "").split("/").pop())}</span></td></tr>`).join("")}</tbody></table></div>
+    <div data-p="artwork" class="hidden"><div class="loading"><span class="spinner"></span></div></div>
     <div data-p="history" class="hidden">${historyTable(al.history, false)}</div>`,
     footer: `<button class="btn" id="mInt">Interactive Search</button><button class="btn primary" id="mAuto">Search</button>` });
-  $$(".tabs a", m).forEach(t => t.onclick = () => { $$(".tabs a", m).forEach(x => x.classList.toggle("on", x === t)); $$("[data-p]", m).forEach(p => p.classList.toggle("hidden", p.dataset.p !== t.dataset.t)); });
+  let artLoaded = false;
+  $$(".tabs a", m).forEach(t => t.onclick = () => {
+    $$(".tabs a", m).forEach(x => x.classList.toggle("on", x === t)); $$("[data-p]", m).forEach(p => p.classList.toggle("hidden", p.dataset.p !== t.dataset.t));
+    if (t.dataset.t === "artwork" && !artLoaded) { artLoaded = true; artworkPanel($('[data-p="artwork"]', m), id, al, redraw); }
+  });
   $("#mAuto", m).onclick = () => run(() => post(`/albums/${id}/search`), "Searching…");
   $("#mInt", m).onclick = () => { m.remove(); interactiveSearch(id, al.title); };
   $("#delFiles", m).onclick = async () => {
@@ -547,6 +558,52 @@ async function albumDetails(id, redraw) {
     sel.innerHTML = rels.map(r => `<option value="${r.mbid}" ${r.mbid === al.release_mbid ? "selected" : ""}>${esc(r.title)} — ${esc(r.format)} · ${r.tracks} tracks · ${esc(r.country || "")} ${esc(r.date || "")} ${r.disambiguation ? "(" + esc(r.disambiguation) + ")" : ""} ${r.status !== "Official" ? "[" + esc(r.status) + "]" : ""}</option>`).join("");
     sel.onchange = async () => { await run(() => put("/albums/" + id, { release_mbid: sel.value }), "Tracklist updated"); m.remove(); albumDetails(id, redraw); };
   }).catch(() => $("#relSel", m).innerHTML = "<option>Unavailable</option>");
+}
+
+/* ---------- artwork ---------- */
+async function artworkPanel(box, id, al, redraw) {
+  let a;
+  try { a = await api(`/albums/${id}/artwork`); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const cur = a.local_cover || a.current;
+  box.innerHTML = `
+    <div class="row" style="align-items:flex-start;gap:18px;margin-bottom:14px">
+      <img id="artCur" src="${esc(cur || "")}" onerror="this.style.visibility='hidden'" style="width:160px;height:160px;border-radius:8px;object-fit:cover;background:#262a34">
+      <div class="grow">
+        <div style="margin-bottom:6px"><b>Current artwork</b></div>
+        <div class="small muted">${a.files ? `Embedded in ${a.embedded} of ${a.files} file(s)` : "No files on disk yet — artwork is added when the album is imported"}${a.local_cover ? " · cover file in album folder" : ""}</div>
+        <label class="row small" style="margin:10px 0"><input type="checkbox" id="artReplace" checked> Replace artwork already in the files</label>
+        <div class="row">
+          <button class="btn primary" id="artAuto" ${a.files ? "" : "disabled"}>Update from Cover Art Archive</button>
+          <label class="btn" ${a.files ? "" : "style='opacity:.5;pointer-events:none'"}>Upload image…<input type="file" id="artFile" accept="image/*" hidden></label>
+        </div>
+        <div class="help" style="margin-top:6px">Saved as cover.jpg in the album folder and embedded in every track. Your media server is told to rescan.</div>
+      </div></div>
+    <h3>Available on Cover Art Archive <span class="dim small">${a.options.length}</span></h3>
+    ${a.options.length ? `<div class="posters" style="--poster:130px">${a.options.map((o, i) => `
+      <div class="poster" data-opt="${i}" title="${esc(o.comment || o.types.join(", "))}">
+        <div class="img" style="background-image:url('${esc(o.thumb)}')"></div>
+        <div class="meta"><div class="sub">${esc(o.types.join(", ") || "Image")}</div><div class="sub dim">${esc(o.source)}</div></div></div>`).join("")}</div>
+      <p class="dim small">Click an image to use it.</p>`
+    : `<p class="dim">Nothing on the Cover Art Archive for this album — upload your own image instead.</p>`}`;
+  const apply = async (body, label) => {
+    if (!a.files) return toast("Import the album first", "warn");
+    body.replace = $("#artReplace", box).checked;
+    box.style.opacity = .5;
+    try {
+      const r = await post(`/albums/${id}/artwork`, body);
+      toast(`${label}: embedded in ${r.embedded} file(s)${r.cover_file ? " + cover file" : ""}`);
+      box.style.opacity = 1; artworkPanel(box, id, al, redraw); redraw && redraw();
+    } catch (e) { toast(e.message, "error"); box.style.opacity = 1; }
+  };
+  $("#artAuto", box).onclick = () => apply({}, "Artwork updated");
+  $$("[data-opt]", box).forEach(el => el.onclick = () => apply({ url: a.options[+el.dataset.opt].url }, "Artwork updated"));
+  $("#artFile", box).onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    if (f.size > 25 * 1024 * 1024) return toast("Image is larger than 25 MB", "error");
+    const rd = new FileReader();
+    rd.onload = () => apply({ data: rd.result }, "Custom artwork saved");
+    rd.readAsDataURL(f);
+  };
 }
 
 /* ---------- interactive search ---------- */
@@ -679,7 +736,7 @@ route(/^\/activity\/queue$/, async view => {
 
 function historyTable(items, withArtist = true) {
   const ev = { grabbed: ["blue", "Grabbed"], imported: ["green", "Imported"], upgraded: ["green", "Upgraded"], downloadFailed: ["red", "Failed"],
-    artistAdded: ["purple", "Artist added"], fileDeleted: ["orange", "Deleted"] };
+    artistAdded: ["purple", "Artist added"], fileDeleted: ["orange", "Deleted"], artworkUpdated: ["blue", "Artwork"] };
   if (!items.length) return `<div class="empty">No history</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>Event</th>${withArtist ? "<th>Artist</th><th>Album</th>" : ""}<th>Source</th><th>Quality</th><th>Date</th><th></th></tr></thead><tbody>
     ${items.map(h => { const [c, l] = ev[h.event] || ["gray", h.event]; return `<tr><td><span class="label ${c}">${l}</span></td>
@@ -751,6 +808,10 @@ route(/^\/settings\/media$/, async view => {
     { key: "write_tags", label: "Write Tags", type: "bool", help: "Writes clean MusicBrainz tags (Picard-compatible) so Navidrome/Plex/Jellyfin group albums correctly" },
     { key: "embed_cover", label: "Embed Cover Art", type: "bool" },
     { key: "save_cover_jpg", label: "Save cover.jpg", type: "bool" },
+    { key: "artwork_replace_existing", label: "Replace Existing Embedded Art", type: "bool", help: "When importing, swap any artwork already in the files for the Cover Art Archive cover" },
+    { key: "artwork_max_size", label: "Artwork Size", type: "select", options: [[500, "500 px"], [1000, "1000 px"], [1200, "1200 px (recommended)"], [0, "Original size"]], help: "Covers are re-saved as JPEG at this size so every player can read them" },
+    { key: "save_artist_image", label: "Save artist.jpg", type: "bool", help: "Writes the artist photo into the artist folder (needs a fanart.tv key in Settings → General)" },
+    { key: "artwork_interval_days", label: "Artwork Scan Interval (days)", type: "number", help: "Fills in missing artwork across the library. 0 disables" },
     { key: "min_track_match_pct", label: "Minimum Track Match %", type: "number", help: "Automatic imports below this are blocked for manual import" },
     { key: "delete_empty_folders", label: "Delete Empty Download Folders", type: "bool" },
     { key: "recycle_bin", label: "Recycle Bin", type: "folder", help: "Replaced/deleted files go here instead of being deleted. Empty = delete" },
@@ -772,11 +833,16 @@ route(/^\/settings\/media$/, async view => {
     <table><thead><tr><th>Client</th><th>Remote Path</th><th>Local Path</th><th></th></tr></thead><tbody>
     ${maps.map(x => `<tr><td>${esc((clients.find(c => c.id === x.client_id) || {}).name || "Any")}</td><td>${esc(x.remote_path)}</td><td>${esc(x.local_path)}</td><td><button class="icon-btn" data-delmap="${x.id}">✕</button></td></tr>`).join("")}
     </tbody></table><button class="btn" id="addMap" style="margin-top:8px">+ Add Mapping</button>
+    <h2>Library Artwork</h2><div class="card"><p class="muted" style="margin-top:0">Update the artwork in files you already have.</p>
+      <div class="row"><button class="btn" id="artMissing">Fill in missing artwork</button><button class="btn" id="artAll">Replace all artwork</button></div>
+      <div class="help" style="margin-top:6px">Runs in the background (System → Tasks). “Replace all” rewrites every album's cover from the Cover Art Archive.</div></div>
     <div style="margin-top:20px"><button class="btn primary" id="saveMedia">Save Changes</button></div>`);
   bindFields(view);
   const prev = async () => { const p = await api("/naming/preview"); $("#namePrev").innerHTML = `Example: <code>${esc(p.album_path)}/${esc(p.track)}</code><br>Multi-disc: <code>${esc(p.multi_disc_track)}</code>`; };
   prev();
   $("#saveMedia").onclick = async () => { await saveSettings(view, fields); prev(); };
+  $("#artMissing").onclick = () => run(() => post("/artwork/library", { replace: false }), "Filling in missing artwork…");
+  $("#artAll").onclick = async () => { if (await confirmBox("Replace all artwork", "Rewrite the cover in every album you have? This can take a while for a big library.", "Replace all", false)) run(() => post("/artwork/library", { replace: true }), "Replacing all artwork…"); };
   $("#addRoot").onclick = async () => { const p = await folderPicker("/"); if (p) { await run(() => post("/res/root_folders", { path: p }), "Root folder added"); await loadShared(true); router(); } };
   $$("[data-delroot]").forEach(b => b.onclick = async () => { await del("/res/root_folders/" + b.dataset.delroot); await loadShared(true); router(); });
   $("#addMap").onclick = () => editResource("remote_path_mappings", {}, [

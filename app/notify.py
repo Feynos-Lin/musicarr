@@ -47,7 +47,7 @@ def deliver(n, event, title, body, album=None, artist=None):
                    "album": {k2: album.get(k2) for k2 in ("id", "title", "mbid", "release_date")} if album else None}
         s.request(cfg.get("method", "POST"), cfg["url"], json=payload, timeout=15).raise_for_status()
     elif k == "navidrome":
-        if event in ("import", "upgrade", "test"):
+        if event in ("import", "upgrade", "artwork", "test"):
             salt = secrets.token_hex(6)
             tok = hashlib.md5((cfg["password"] + salt).encode()).hexdigest()
             r = s.get(cfg["url"].rstrip("/") + "/rest/startScan", params={
@@ -58,10 +58,10 @@ def deliver(n, event, title, body, album=None, artist=None):
             if st.get("status") != "ok":
                 raise RuntimeError(st.get("error", {}).get("message", "Navidrome scan failed"))
     elif k == "jellyfin":
-        if event in ("import", "upgrade", "test"):
+        if event in ("import", "upgrade", "artwork", "test"):
             s.post(cfg["url"].rstrip("/") + "/Library/Refresh", headers={"X-Emby-Token": cfg["api_key"]}, timeout=15).raise_for_status()
     elif k == "plex":
-        if event in ("import", "upgrade", "test"):
+        if event in ("import", "upgrade", "artwork", "test"):
             base = cfg["url"].rstrip("/")
             sec = cfg.get("section_id")
             path = f"/library/sections/{sec}/refresh" if sec else "/library/sections/all/refresh"
@@ -76,7 +76,9 @@ def send(event, title, body, album=None, artist=None):
         for n in rows:
             if field and not n.get(field):
                 continue
-            if n["kind"] in LIBRARY_KINDS and event not in ("import", "upgrade"):
+            if n["kind"] in LIBRARY_KINDS and event not in ("import", "upgrade", "artwork"):
+                continue
+            if event == "artwork" and n["kind"] not in LIBRARY_KINDS:
                 continue
             try:
                 deliver(n, event, title, body, album, artist)

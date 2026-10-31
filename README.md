@@ -26,6 +26,7 @@ Sonarr/Radarr-style automation for music. Add artists, Musicarr tracks their dis
 - Matches files to tracks by MusicBrainz IDs, tags, track numbers and titles; blocks imports below a match threshold for manual review
 - Manual import with per-track file picker
 - Writes Picard-compatible MusicBrainz tags, embeds cover art, saves `cover.jpg`
+- Artwork updating: per album (pick any Cover Art Archive image or upload your own), per artist, or the whole library (fill in missing / replace all, plus a weekly scan). Embeds into FLAC, MP3, M4A, OGG, Opus, WAV/AIFF and WMA, writes `cover.jpg` and `artist.jpg`, and triggers a media-server rescan
 - Renaming with tokens (`{Album Artist}`, `{Album Title}`, `{Release Year}`, `{track:00}`, `{medium:0}`, `{Track Title}`, `{Quality}`…), multi-disc aware
 - Move / copy / hardlink (torrents are copied so they keep seeding), recycle bin, remote path mappings
 - Upgrades replace lower-quality files track by track, never downgrade

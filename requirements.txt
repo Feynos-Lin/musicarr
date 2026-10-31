@@ -3,3 +3,4 @@ uvicorn[standard]>=0.30
 requests>=2.31
 mutagen>=1.47
 pyyaml>=6.0
+pillow>=10.0

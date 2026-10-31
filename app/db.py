@@ -78,6 +78,10 @@ DEFAULT_SETTINGS = {
     "import_mode": "move",          # move | copy | hardlink
     "write_tags": True,
     "embed_cover": True,
+    "artwork_replace_existing": True,
+    "artwork_max_size": 1200,
+    "save_artist_image": True,
+    "artwork_interval_days": 7,
     "save_cover_jpg": True,
     "delete_empty_folders": True,
     "recycle_bin": "",

@@ -74,39 +74,11 @@ def write_tags(path, artist, album, track, cover_bytes=None):
                 pass  # key not supported by this container's easy interface
         f.save()
         if cover_bytes and db.get_setting("embed_cover"):
-            embed_cover(path, cover_bytes)
+            from . import artwork
+            img, mime, w, h = cover_bytes
+            artwork.embed(path, img, mime, replace=bool(db.get_setting("artwork_replace_existing")), w=w, h=h)
     except Exception as e:
         log.warning("Tagging failed for %s: %s", path, e)
-
-
-def embed_cover(path, data):
-    ext = os.path.splitext(path)[1].lower()
-    try:
-        if ext == ".flac":
-            from mutagen.flac import FLAC, Picture
-            f = FLAC(path)
-            if f.pictures:
-                return
-            p = Picture()
-            p.type, p.mime, p.data = 3, "image/jpeg", data
-            f.add_picture(p)
-            f.save()
-        elif ext == ".mp3":
-            from mutagen.id3 import ID3, APIC
-            t = ID3(path)
-            if t.getall("APIC"):
-                return
-            t.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data))
-            t.save()
-        elif ext == ".m4a":
-            from mutagen.mp4 import MP4, MP4Cover
-            f = MP4(path)
-            if f.tags and f.tags.get("covr"):
-                return
-            f.tags["covr"] = [MP4Cover(data, imageformat=MP4Cover.FORMAT_JPEG)]
-            f.save()
-    except Exception as e:
-        log.debug("Cover embed failed for %s: %s", path, e)
 
 
 # ---------------- naming ----------------
@@ -243,13 +215,14 @@ def _retire(path):
 
 
 def fetch_cover(album):
+    """Cover for a new import, normalised once: (bytes, mime, width, height) or None."""
+    from . import artwork
     try:
-        r = http().get(f"https://coverartarchive.org/release-group/{album['mbid']}/front-1200", timeout=30)
-        if r.ok and r.headers.get("content-type", "").startswith("image"):
-            return r.content
+        data = artwork.best_cover(album)
+        return artwork.normalize(data) if data else None
     except Exception as e:
         log.debug("Cover download failed: %s", e)
-    return None
+        return None
 
 
 def import_album(album_id, folder, mode=None, force=False, source_title="", queue_id=None, overrides=None):
@@ -291,8 +264,8 @@ def import_album(album_id, folder, mode=None, force=False, source_title="", queu
         qualities.append(q)
     if cover and db.get_setting("save_cover_jpg"):
         try:
-            with open(os.path.join(dest_dir, "cover.jpg"), "wb") as fh:
-                fh.write(cover)
+            with open(os.path.join(dest_dir, "cover.jpg" if cover[1] == "image/jpeg" else "cover.png"), "wb") as fh:
+                fh.write(cover[0])
         except OSError:
             pass
     db.update("albums", album_id, {"path": dest_dir})

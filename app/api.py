@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from . import db, downloaders, importer, indexers, library, musicbrainz as mb, notify, search, slskd_admin, soulseek, tasks
+from . import artwork, db, downloaders, importer, indexers, library, musicbrainz as mb, notify, search, slskd_admin, soulseek, tasks
 from .db import QUALITIES
 from .util import LOG_BUFFER, VERSION, fmt_size, log
 
@@ -601,6 +601,58 @@ async def stats(req):
     })
 
 
+# ---------------- artwork ----------------
+@err
+async def album_artwork_get(req):
+    aid = int(req.path_params["id"])
+    al = db.decode(db.q1("SELECT * FROM albums WHERE id=?", (aid,)))
+    files = [t["file_path"] for t in db.q("SELECT file_path FROM tracks WHERE album_id=? AND file_path IS NOT NULL", (aid,))]
+    embedded = await off(lambda: sum(1 for f in files if os.path.exists(f) and artwork.has_art(f)))
+    options = await off(artwork.caa_options, al)
+    lc = artwork.local_cover(aid)
+    return J({"current": al.get("cover"), "local_cover": f"/api/v1/albums/{aid}/cover?v={int(os.path.getmtime(lc))}" if lc else None,
+              "files": len(files), "embedded": embedded, "options": options})
+
+
+@err
+async def album_artwork_set(req):
+    import base64
+    aid = int(req.path_params["id"])
+    d = await body(req)
+    data = None
+    if d.get("data"):
+        raw = d["data"].split(",", 1)[-1]
+        data = base64.b64decode(raw)
+        if len(data) > 25 * 1024 * 1024:
+            raise ValueError("Image is larger than 25 MB")
+    res = await off(artwork.update_album, aid, data, d.get("url"), bool(d.get("replace", True)))
+    await off(artwork._rescan)
+    return J(res)
+
+
+async def album_cover(req):
+    from starlette.responses import FileResponse
+    p = artwork.local_cover(int(req.path_params["id"]))
+    if not p:
+        return J({"error": "no cover file"}, 404)
+    return FileResponse(p, headers={"Cache-Control": "max-age=86400"})
+
+
+async def artist_artwork(req):
+    aid = int(req.path_params["id"])
+    d = await body(req)
+    a = db.q1("SELECT name FROM artists WHERE id=?", (aid,))
+    replace = bool(d.get("replace", True))
+    return J(tasks.enqueue(f"Artwork {a['name']}", artwork.update_artist, aid, replace, bool(d.get("missing_only"))))
+
+
+async def library_artwork(req):
+    d = await body(req)
+    name = "Refresh All Artwork" if d.get("replace") else "Artwork Scan"
+    tasks.LAST_RUN[name] = __import__("time").time()
+    return J(tasks.enqueue(name, tasks.TASKS[name]))
+
+
 # ---------------- Soulseek (slskd management) ----------------
 async def slsk_status(req):
     return J(await off(slskd_admin.status))
@@ -640,6 +692,7 @@ routes = [
     Route(P + "/artists/editor", artists_editor, methods=["PUT"]),
     Route(P + "/artists/{id:int}", artist_get), Route(P + "/artists/{id:int}", artist_put, methods=["PUT"]),
     Route(P + "/artists/{id:int}", artist_delete, methods=["DELETE"]),
+    Route(P + "/artists/{id:int}/artwork", artist_artwork, methods=["POST"]),
     Route(P + "/artists/{id:int}/{action}", artist_command, methods=["POST"]),
     Route(P + "/lookup/artists", lookup_artists), Route(P + "/lookup/albums", lookup_albums),
     Route(P + "/albums/monitor", albums_monitor, methods=["PUT"]),
@@ -652,6 +705,9 @@ routes = [
     Route(P + "/albums/{id:int}/preview", album_preview),
     Route(P + "/albums/{id:int}/import", album_import, methods=["POST"]),
     Route(P + "/albums/{id:int}/files", album_delete_files, methods=["DELETE"]),
+    Route(P + "/albums/{id:int}/artwork", album_artwork_get), Route(P + "/albums/{id:int}/artwork", album_artwork_set, methods=["POST"]),
+    Route(P + "/albums/{id:int}/cover", album_cover),
+    Route(P + "/artwork/library", library_artwork, methods=["POST"]),
     Route(P + "/calendar", calendar), Route("/feed/calendar.ics", calendar_ics),
     Route(P + "/wanted/missing", wanted_missing), Route(P + "/wanted/cutoff", wanted_cutoff),
     Route(P + "/queue", queue_list), Route(P + "/queue/{id:int}", queue_delete, methods=["DELETE"]),
