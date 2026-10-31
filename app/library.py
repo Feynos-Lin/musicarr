@@ -53,13 +53,17 @@ def add_artist(mbid, quality_profile_id=None, metadata_profile_id=None, root_fol
     if not root_folder:
         rf = db.q1("SELECT path FROM root_folders ORDER BY id")
         root_folder = rf["path"] if rf else "/music"
-    aid = db.insert("artists", dict(
+    import sqlite3
+    try:
+        aid = db.insert("artists", dict(
         mbid=mbid, name=info["name"], sort_name=info["sort_name"], disambiguation=info["disambiguation"],
         artist_type=info["artist_type"], country=info["country"], overview=info["overview"], genres=info["genres"],
         image=info["image"], links=info["links"], monitored=1, monitor_new=monitor_new,
         quality_profile_id=quality_profile_id or db.q1("SELECT id FROM quality_profiles ORDER BY id")["id"],
         metadata_profile_id=metadata_profile_id or db.q1("SELECT id FROM metadata_profiles ORDER BY id")["id"],
         root_folder=root_folder, path=path, tags=tags or [], added=db.now()))
+    except sqlite3.IntegrityError:
+        raise ValueError("Artist already in library")
     db.add_history("artistAdded", artist_id=aid, source_title=info["name"])
     log.info("Added artist %s", info["name"])
     return aid

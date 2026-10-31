@@ -158,6 +158,33 @@ def library_scan():
     return f"Linked {total} file(s)"
 
 
+def library_import(items):
+    """Add each matched folder as an artist; one bad folder never stops the rest."""
+    added, skipped, failed = 0, 0, []
+    for item in items:
+        name = os.path.basename(item.get("path", "")) or item["mbid"]
+        try:
+            existing = db.q1("SELECT id, path FROM artists WHERE mbid=?", (item["mbid"],))
+            if existing:
+                if not existing["path"] and item.get("path"):
+                    db.update("artists", existing["id"], {"path": item["path"]})
+                    enqueue("Rescan", importer.scan_artist, existing["id"])
+                skipped += 1
+                continue
+            monitor = item.get("monitor", "existing")
+            aid = library.add_artist(item["mbid"], item.get("quality_profile_id"), item.get("metadata_profile_id"),
+                                     item.get("root_folder"), monitor, path=item.get("path"))
+            enqueue(f"Import {name}", add_artist_flow, aid, monitor, bool(item.get("search")))
+            added += 1
+        except Exception as e:
+            log.warning("Library import of %s failed: %s", name, e)
+            failed.append(f"{name}: {e}")
+    msg = f"Added {added}, already in library {skipped}, failed {len(failed)}"
+    if failed:
+        msg += " — " + "; ".join(failed[:5]) + (" …" if len(failed) > 5 else "")
+    return msg
+
+
 def import_list_sync():
     added = 0
     for il in db.q("SELECT * FROM import_lists WHERE enabled=1"):

@@ -358,8 +358,12 @@ route(/^\/import$/, async view => {
         monitor: $("#impMonitor").value, quality_profile_id: +$("#impProfile").value, search: $("#impSearch").checked });
     });
     if (!items.length) return toast("Select matched folders first", "warn");
-    await run(() => post("/library/import", { items }), `Importing ${items.length} artist(s)…`);
-    location.hash = "#/artists";
+    const btn = $("#impGo"); btn.disabled = true; btn.textContent = "Starting…";
+    try {
+      const r = await post("/library/import", { items });
+      toast(`Importing ${r.queued} artist(s) in the background — progress is in System → Tasks`);
+      location.hash = "#/artists";
+    } catch (e) { toast(e.message, "error"); btn.disabled = false; btn.textContent = "Import selected"; }
   };
 });
 

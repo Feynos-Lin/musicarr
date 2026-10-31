@@ -374,13 +374,15 @@ def scan_artist(artist_id):
 
 def unmapped_folders():
     """Top-level folders under root folders that don't belong to any artist (for Library Import)."""
-    known = {os.path.normpath(a["path"]) for a in db.q("SELECT path FROM artists WHERE path IS NOT NULL")}
+    known = set()
+    for a in db.q("SELECT * FROM artists"):
+        known.add(os.path.normcase(os.path.normpath(a["path"] or artist_path(a))))
     out = []
     for rf in db.q("SELECT path FROM root_folders"):
         try:
             for n in sorted(os.listdir(rf["path"])):
                 p = os.path.join(rf["path"], n)
-                if os.path.isdir(p) and os.path.normpath(p) not in known and not n.startswith("."):
+                if os.path.isdir(p) and os.path.normcase(os.path.normpath(p)) not in known and not n.startswith("."):
                     out.append({"path": p, "name": n, "root_folder": rf["path"]})
         except OSError:
             continue

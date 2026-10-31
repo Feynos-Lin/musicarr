@@ -43,6 +43,12 @@ class Auth(BaseHTTPMiddleware):
         return Response("Authentication required", 401, {"WWW-Authenticate": 'Basic realm="Musicarr"'})
 
 
+async def server_error(req, exc):
+    import traceback
+    log.error("Unhandled error on %s %s: %s\n%s", req.method, req.url.path, exc, traceback.format_exc())
+    return JSONResponse({"error": f"{type(exc).__name__}: {exc}"}, status_code=500)
+
+
 async def index(req):
     return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
 
@@ -66,6 +72,7 @@ app = Starlette(
             Mount("/static", StaticFiles(directory=STATIC), name="static")],
     middleware=[Middleware(Auth)],
     lifespan=lifespan,
+    exception_handlers={Exception: server_error},
 )
 
 

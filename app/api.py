@@ -561,15 +561,18 @@ async def unmapped(req):
 @err
 async def library_import(req):
     d = await body(req)
-    added = []
+    items, seen = [], set()
     for item in d.get("items", []):
-        if db.q1("SELECT 1 FROM artists WHERE mbid=?", (item["mbid"],)):
+        if not item.get("mbid") or item["mbid"] in seen:
             continue
-        aid = await off(library.add_artist, item["mbid"], item.get("quality_profile_id"), item.get("metadata_profile_id"),
-                        item.get("root_folder"), item.get("monitor", "existing"), path=item["path"])
-        tasks.enqueue("Import Artist", tasks.add_artist_flow, aid, item.get("monitor", "existing"), bool(item.get("search")))
-        added.append(aid)
-    return J({"added": added})
+        seen.add(item["mbid"])
+        items.append(item)
+    if not items:
+        return J({"error": "Nothing to import"}, 400)
+    if any(c["name"].startswith("Library Import") and c["status"] in ("queued", "running") for c in tasks.COMMANDS):
+        return J({"error": "A library import is already running — check System → Tasks"}, 409)
+    cmd = tasks.enqueue(f"Library Import ({len(items)} artists)", tasks.library_import, items)
+    return J({"queued": len(items), "command": cmd})
 
 
 async def filesystem(req):
