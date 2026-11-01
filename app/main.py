@@ -78,6 +78,17 @@ async def lifespan(app):
     tasks.start(asyncio.get_running_loop())
     log.info("Musicarr %s started — config in %s", VERSION, db.CONFIG_DIR)
     yield
+    log.info("Musicarr shutting down")
+    try:
+        with db._lock:
+            db.conn().execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except Exception:
+        pass
+    # Background jobs may be mid-way through a file on a slow mount; exit now rather than waiting for them.
+    import threading
+    t = threading.Timer(2.0, os._exit, args=(0,))
+    t.daemon = True
+    t.start()
 
 
 app = Starlette(

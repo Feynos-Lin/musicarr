@@ -5,6 +5,7 @@ import itertools
 import os
 import shutil
 import sqlite3
+import threading
 import time
 import traceback
 
@@ -15,6 +16,7 @@ from .util import log, map_path
 _ids = itertools.count(1)
 COMMANDS = collections.deque(maxlen=200)
 _queue: asyncio.Queue = None
+_heavy_queue: asyncio.Queue = None
 _loop = None
 
 SCHEDULE = {  # name: (setting key, unit seconds, default)
@@ -29,6 +31,34 @@ SCHEDULE = {  # name: (setting key, unit seconds, default)
     "Housekeeping": (None, 86400, 1),
 }
 LAST_RUN = {}
+# Jobs that read/write every file in the library. Only one runs at a time, so a slow (e.g. Windows) mount
+# isn't hammered by several full scans at once.
+HEAVY = {"Library Scan", "Artwork Scan", "Refresh All Artwork", "Refresh Artists", "Missing Album Search", "Cutoff Unmet Search"}
+
+
+def is_heavy(name):
+    base = name.split(" (")[0]
+    return base in HEAVY or base.startswith(("Library Import", "Artwork ", "Import ", "Refresh ", "Rescan "))
+# On a fresh install, first runs are spread out instead of all firing a minute after startup.
+FIRST_DELAY = {"RSS Sync": 120, "Import List Sync": 900, "Missing Album Search": 1800, "Housekeeping": 3600,
+               "Refresh Artists": 2 * 3600, "Library Scan": 4 * 3600, "Artwork Scan": 6 * 3600, "Backup": 8 * 3600}
+
+
+def _load_last_run():
+    saved = db.get_setting("task_last_run") or {}
+    now = time.time()
+    for name in SCHEDULE:
+        if name == "Check Downloads":
+            continue
+        if name in saved:
+            LAST_RUN[name] = float(saved[name])
+        else:
+            # pretend it last ran so the first run lands FIRST_DELAY from now
+            LAST_RUN[name] = now - interval(name) + FIRST_DELAY.get(name, 3600)
+
+
+def _save_last_run():
+    db.set_setting("task_last_run", {k: v for k, v in LAST_RUN.items() if k in SCHEDULE and k != "Check Downloads"})
 
 
 def interval(name):
@@ -46,13 +76,14 @@ def enqueue(name, fn, *args, **kw):
     COMMANDS.appendleft(cmd)
     if _loop is None:
         return cmd
-    _loop.call_soon_threadsafe(_queue.put_nowait, (cmd, fn, args, kw))
+    q = _heavy_queue if is_heavy(name) else _queue
+    _loop.call_soon_threadsafe(q.put_nowait, (cmd, fn, args, kw))
     return cmd
 
 
-async def _worker():
+async def _worker(queue):
     while True:
-        cmd, fn, args, kw = await _queue.get()
+        cmd, fn, args, kw = await queue.get()
         cmd["status"], cmd["started"] = "running", db.now()
         try:
             res = await asyncio.to_thread(fn, *args, **kw)
@@ -67,6 +98,7 @@ async def _worker():
 
 async def _scheduler():
     await asyncio.sleep(10)
+    _load_last_run()
     while True:
         for name in SCHEDULE:
             if name == "Check Downloads":
@@ -74,8 +106,9 @@ async def _scheduler():
             iv = interval(name)
             if iv <= 0:
                 continue
-            if time.time() - LAST_RUN.get(name, time.time() - iv + 60 if name != "RSS Sync" else 0) >= iv:
+            if time.time() - LAST_RUN.get(name, time.time()) >= iv:
                 LAST_RUN[name] = time.time()
+                _save_last_run()
                 if not any(c["name"] == name and c["status"] in ("queued", "running") for c in COMMANDS):
                     enqueue(name, TASKS[name])
         await asyncio.sleep(20)
@@ -93,11 +126,13 @@ async def _download_monitor():
 
 
 def start(loop):
-    global _queue, _loop
+    global _queue, _heavy_queue, _loop
     _loop = loop
     _queue = asyncio.Queue()
+    _heavy_queue = asyncio.Queue()
     for _ in range(2):
-        loop.create_task(_worker())
+        loop.create_task(_worker(_queue))
+    loop.create_task(_worker(_heavy_queue))  # disk-heavy jobs run one at a time
     loop.create_task(_scheduler())
     loop.create_task(_download_monitor())
 

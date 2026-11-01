@@ -543,7 +543,9 @@ async def command_run(req):
     name = d.get("name")
     if name not in tasks.TASKS:
         return J({"error": "unknown task"}, 400)
-    tasks.LAST_RUN[name] = time.time()
+    if name in tasks.SCHEDULE:
+        tasks.LAST_RUN[name] = time.time()
+        tasks._save_last_run()
     return J(tasks.enqueue(name, tasks.TASKS[name]))
 
 

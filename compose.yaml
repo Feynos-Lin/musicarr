@@ -9,6 +9,8 @@ services:
     image: ghcr.io/feynos-lin/musicarr:latest
     container_name: musicarr
     restart: unless-stopped
+    init: true               # proper init process so stop/restart signals are handled cleanly
+    stop_grace_period: 30s
     environment:
       - TZ=America/Denver
       - PUID=1000
